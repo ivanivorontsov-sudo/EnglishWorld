@@ -17,6 +17,7 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -215,6 +216,8 @@ private fun EnglishWorldApp(activity: MainActivity) {
     var cardsVersion by remember { mutableStateOf(0) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val provider = ChatEngine.providers.firstOrNull { it.id == providerId } ?: ChatEngine.providers.first()
+
+    BackHandler(enabled = page == Page.PROVIDER_LOGIN) { page = Page.CHAT }
 
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
