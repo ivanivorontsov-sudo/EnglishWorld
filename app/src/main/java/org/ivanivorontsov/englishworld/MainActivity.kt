@@ -310,7 +310,12 @@ private fun EnglishWorldApp(activity: MainActivity) {
             }
         }
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+        Column(
+            Modifier.fillMaxSize().padding(padding).then(
+                if (page == Page.PROVIDER_LOGIN) Modifier
+                else Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)
+            )
+        ) {
             if (page != Page.PROVIDER_LOGIN) Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -323,10 +328,21 @@ private fun EnglishWorldApp(activity: MainActivity) {
                 TextButton(onClick = { page = Page.SETTINGS }) { Text("Настройки") }
             }
             when (page) {
-                Page.CHAT, Page.PROVIDER_LOGIN -> Box(Modifier.fillMaxSize()) {
+                Page.CHAT, Page.PROVIDER_LOGIN -> Column(Modifier.fillMaxSize()) {
+                    if (page == Page.PROVIDER_LOGIN) {
+                        ProviderLoginScreen(
+                            providerTitle = provider.title,
+                            webLoaded = webLoaded,
+                            onDone = { page = Page.CHAT }
+                        )
+                    }
                     if (provider.isWebChat) key(provider.id) {
                         AndroidView(
-                            modifier = Modifier.fillMaxSize().alpha(if (page == Page.PROVIDER_LOGIN) 1f else 0f),
+                            modifier = if (page == Page.PROVIDER_LOGIN) {
+                                Modifier.fillMaxWidth().weight(1f)
+                            } else {
+                                Modifier.size(1.dp).alpha(0f)
+                            },
                             factory = { ctx ->
                                 WebView(ctx).apply {
                                     webView = this
@@ -353,7 +369,13 @@ private fun EnglishWorldApp(activity: MainActivity) {
                         )
                     }
                     if (page == Page.PROVIDER_LOGIN) {
-                        ProviderLoginScreen(providerTitle = provider.title, webLoaded = webLoaded, onDone = { page = Page.CHAT })
+                        Text(
+                            if (webLoaded) "Страница загружена · после входа нажми «Готово»"
+                            else "Загружаю страницу провайдера…",
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
                     } else {
                         ChatScreen(
                             providerId, provider.title, messages, draft, { draft = it }, partial, listening, sending,
@@ -361,7 +383,8 @@ private fun EnglishWorldApp(activity: MainActivity) {
                             onMic = { if (listening) { activity.stopListening(); listening = false } else beginListening() },
                             onSend = { sendMessage() },
                             onSpeakLast = { messages.lastOrNull { it.role == "assistant" }?.let { activity.speak(ChatEngine.spokenText(it.text), accent) } },
-                            onLogin = { page = Page.PROVIDER_LOGIN }
+                            onLogin = { page = Page.PROVIDER_LOGIN },
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -457,9 +480,10 @@ private fun ChatScreen(
     providerId: String, providerTitle: String, messages: List<ChatMessage>,
     draft: String, onDraft: (String) -> Unit, partial: String,
     listening: Boolean, sending: Boolean, status: String, webLoaded: Boolean,
-    onMic: () -> Unit, onSend: () -> Unit, onSpeakLast: () -> Unit, onLogin: () -> Unit
+    onMic: () -> Unit, onSend: () -> Unit, onSpeakLast: () -> Unit, onLogin: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f)) {
                 Text("Голосовой репетитор", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -522,37 +546,20 @@ private fun ProviderLoginScreen(
     webLoaded: Boolean,
     onDone: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Вход в $providerTitle", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("Отдельное окно авторизации", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-                }
-                TextButton(onClick = onDone) { Text("Готово") }
-            }
-        }
-        Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), shape = RoundedCornerShape(14.dp)) {
+    Row(
+        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Вход · $providerTitle", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Войди в аккаунт на странице провайдера. После этого нажми «Готово»: сайт скроется, а переписка продолжится в интерфейсе EnglishWorld.",
-                Modifier.fillMaxWidth().padding(12.dp),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), shape = RoundedCornerShape(14.dp)) {
-            Text(
-                if (webLoaded) "Страница загружена. После входа нажми «Готово»."
-                else "Загружаю страницу…",
-                Modifier.fillMaxWidth().padding(10.dp),
+                if (webLoaded) "Авторизуйся на сайте провайдера" else "Загружаю страницу…",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.secondary
             )
         }
+        TextButton(onClick = onDone) { Text("Готово") }
     }
 }
 
