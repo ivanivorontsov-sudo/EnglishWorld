@@ -180,7 +180,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Page { HOME, CHAT, LESSONS, REVIEW, PROGRESS, SETTINGS }
+private enum class Page { HOME, CHAT, PROVIDER_LOGIN, LESSONS, REVIEW, PROGRESS, SETTINGS }
 private data class ChatMessage(val role: String, val text: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -240,7 +240,7 @@ private fun EnglishWorldApp(activity: MainActivity) {
         while (!webLoaded && attempts++ < 40) delay(500)
         if (!webLoaded) throw IllegalStateException("Чат ещё загружается. Попробуйте через несколько секунд.")
         if (evaluateJs(view, ChatEngine.STATE_SCRIPT) != "ok") {
-            throw IllegalStateException("Сначала войдите в аккаунт провайдера в окне чата выше.")
+            throw IllegalStateException("Сначала откройте отдельное окно входа и войдите в аккаунт провайдера.")
         }
         val prompt = ChatEngine.learnerPrompt(text, level)
         val injected = evaluateJs(view, ChatEngine.injectScript(prompt))
@@ -289,7 +289,7 @@ private fun EnglishWorldApp(activity: MainActivity) {
     }
 
     Scaffold(bottomBar = {
-        NavigationBar {
+        if (page != Page.PROVIDER_LOGIN) NavigationBar {
             val items = listOf(
                 Triple(Page.HOME, "Домой", "⌂"), Triple(Page.CHAT, "Говорить", "🎙"),
                 Triple(Page.LESSONS, "Уроки", "▤"), Triple(Page.REVIEW, "Повтор", "↻"),
@@ -306,7 +306,7 @@ private fun EnglishWorldApp(activity: MainActivity) {
         }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
-            Row(
+            if (page != Page.PROVIDER_LOGIN) Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -318,18 +318,14 @@ private fun EnglishWorldApp(activity: MainActivity) {
                 TextButton(onClick = { page = Page.SETTINGS }) { Text("Настройки") }
             }
             when (page) {
-                Page.HOME -> HomeScreen(level, completed.size, Curriculum.lessons.size,
-                    { page = Page.CHAT }, { page = Page.LESSONS }, { page = Page.REVIEW }, { page = Page.PROGRESS })
-                Page.CHAT -> ChatScreen(
-                    providerId, provider.title, messages, draft, { draft = it }, partial, listening, sending,
-                    status, webLoaded,
-                    onMic = { if (listening) { activity.stopListening(); listening = false } else beginListening() },
-                    onSend = { sendMessage() },
-                    onSpeakLast = { messages.lastOrNull { it.role == "assistant" }?.let { activity.speak(ChatEngine.spokenText(it.text), accent) } },
+                Page.PROVIDER_LOGIN -> ProviderLoginScreen(
+                    providerTitle = provider.title,
+                    webLoaded = webLoaded,
+                    onDone = { page = Page.CHAT },
                     webContent = {
                         if (provider.isWebChat) key(provider.id) {
                             AndroidView(
-                                modifier = Modifier.fillMaxWidth().height(210.dp),
+                                modifier = Modifier.fillMaxWidth().weight(1f),
                                 factory = { ctx ->
                                     WebView(ctx).apply {
                                         webView = this
@@ -356,6 +352,16 @@ private fun EnglishWorldApp(activity: MainActivity) {
                             )
                         }
                     }
+                )
+                Page.HOME -> HomeScreen(level, completed.size, Curriculum.lessons.size,
+                    { page = Page.CHAT }, { page = Page.LESSONS }, { page = Page.REVIEW }, { page = Page.PROGRESS })
+                Page.CHAT -> ChatScreen(
+                    providerId, provider.title, messages, draft, { draft = it }, partial, listening, sending,
+                    status, webLoaded,
+                    onMic = { if (listening) { activity.stopListening(); listening = false } else beginListening() },
+                    onSend = { sendMessage() },
+                    onSpeakLast = { messages.lastOrNull { it.role == "assistant" }?.let { activity.speak(ChatEngine.spokenText(it.text), accent) } },
+                    onLogin = { page = Page.PROVIDER_LOGIN }
                 )
                 Page.LESSONS -> LessonsScreen(
                     selectedLesson, completed, { selectedLesson = it },
@@ -447,8 +453,7 @@ private fun ChatScreen(
     providerId: String, providerTitle: String, messages: List<ChatMessage>,
     draft: String, onDraft: (String) -> Unit, partial: String,
     listening: Boolean, sending: Boolean, status: String, webLoaded: Boolean,
-    onMic: () -> Unit, onSend: () -> Unit, onSpeakLast: () -> Unit,
-    webContent: @Composable () -> Unit
+    onMic: () -> Unit, onSend: () -> Unit, onSpeakLast: () -> Unit, onLogin: () -> Unit
 ) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -456,16 +461,12 @@ private fun ChatScreen(
                 Text("Голосовой репетитор", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(providerTitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
             }
-            Text(if (sending) "думает…" else if (listening) "слушает…" else "готов", color = MaterialTheme.colorScheme.secondary)
-        }
-        if (providerId != "api") {
-            webContent()
-            Text(
-                if (webLoaded) "Веб-чат готов. Войди в аккаунт прямо здесь, если это первый запуск."
-                else "Загружается страница провайдера…",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(if (sending) "думает…" else if (listening) "слушает…" else "готов", color = MaterialTheme.colorScheme.secondary)
+                if (providerId != "api") {
+                    TextButton(onClick = onLogin) { Text(if (webLoaded) "Аккаунт" else "Войти") }
+                }
+            }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (messages.isEmpty()) item {
@@ -508,6 +509,40 @@ private fun ChatScreen(
             }
             OutlinedButton(onClick = onSpeakLast, modifier = Modifier.size(width = 58.dp, height = 50.dp)) { Text("🔊") }
         }
+    }
+}
+
+@Composable
+private fun ProviderLoginScreen(
+    providerTitle: String,
+    webLoaded: Boolean,
+    onDone: () -> Unit,
+    webContent: @Composable () -> Unit
+) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Вход в $providerTitle", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Отдельное окно авторизации", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            }
+            TextButton(onClick = onDone) { Text("Готово") }
+        }
+        Text(
+            "Войди в свой аккаунт на странице провайдера. После этого вернись в EnglishWorld: переписка, текстовый ввод и голос будут работать в окне приложения.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
+        webContent()
+        Text(
+            if (webLoaded) "Страница загружена. После входа нажми «Готово»."
+            else "Загружаю страницу…",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
     }
 }
 
@@ -673,7 +708,7 @@ private fun SettingsScreen(
             )
             Text("Для Pollinations API укажите https://gen.pollinations.ai/v1 и свой действующий ключ. Ключ не встроен в приложение и не передаётся автору.")
         } else {
-            Text("Открой вкладку «Говорить» и войди в сервис в верхнем окне. Сессия хранится в WebView на этом устройстве. Провайдер может менять интерфейс сайта, и автоматическую отправку иногда потребуется обновить.")
+            Text("Открой вкладку «Говорить» и нажми «Войти», чтобы авторизоваться в отдельном окне. Затем вернись к переписке: сайт не занимает место в чате. Сессия хранится в WebView на этом устройстве; провайдер может менять интерфейс сайта.")
         }
         Text("Текущий уровень", fontWeight = FontWeight.SemiBold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
