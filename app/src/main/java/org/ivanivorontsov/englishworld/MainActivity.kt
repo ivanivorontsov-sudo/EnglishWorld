@@ -57,6 +57,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -318,51 +319,50 @@ private fun EnglishWorldApp(activity: MainActivity) {
                 TextButton(onClick = { page = Page.SETTINGS }) { Text("Настройки") }
             }
             when (page) {
-                Page.PROVIDER_LOGIN -> ProviderLoginScreen(
-                    providerTitle = provider.title,
-                    webLoaded = webLoaded,
-                    onDone = { page = Page.CHAT },
-                    webContent = {
-                        if (provider.isWebChat) key(provider.id) {
-                            AndroidView(
-                                modifier = Modifier.fillMaxWidth().weight(1f),
-                                factory = { ctx ->
-                                    WebView(ctx).apply {
-                                        webView = this
-                                        CookieManager.getInstance().setAcceptCookie(true)
-                                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                                        settings.javaScriptEnabled = true
-                                        settings.domStorageEnabled = true
-                                        settings.databaseEnabled = true
-                                        settings.allowFileAccess = false
-                                        settings.allowContentAccess = false
-                                        settings.userAgentString = settings.userAgentString
-                                            .replace("; wv", "").replace(Regex("Version/\\S+ "), "")
-                                        webChromeClient = WebChromeClient()
-                                        webViewClient = object : WebViewClient() {
-                                            override fun onPageFinished(view: WebView?, url: String?) {
-                                                CookieManager.getInstance().flush()
-                                                webLoaded = true
-                                            }
+                Page.CHAT, Page.PROVIDER_LOGIN -> Box(Modifier.fillMaxSize()) {
+                    if (provider.isWebChat) key(provider.id) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize().alpha(if (page == Page.PROVIDER_LOGIN) 1f else 0f),
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                    webView = this
+                                    CookieManager.getInstance().setAcceptCookie(true)
+                                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    settings.databaseEnabled = true
+                                    settings.allowFileAccess = false
+                                    settings.allowContentAccess = false
+                                    settings.userAgentString = settings.userAgentString
+                                        .replace("; wv", "").replace(Regex("Version/\\S+ "), "")
+                                    webChromeClient = WebChromeClient()
+                                    webViewClient = object : WebViewClient() {
+                                        override fun onPageFinished(view: WebView?, url: String?) {
+                                            CookieManager.getInstance().flush()
+                                            webLoaded = true
                                         }
-                                        loadUrl(provider.url!!)
                                     }
-                                },
-                                update = { webView = it }
-                            )
-                        }
+                                    loadUrl(provider.url!!)
+                                }
+                            },
+                            update = { webView = it }
+                        )
                     }
-                )
+                    if (page == Page.PROVIDER_LOGIN) {
+                        ProviderLoginScreen(providerTitle = provider.title, webLoaded = webLoaded, onDone = { page = Page.CHAT })
+                    } else {
+                        ChatScreen(
+                            providerId, provider.title, messages, draft, { draft = it }, partial, listening, sending,
+                            status, webLoaded,
+                            onMic = { if (listening) { activity.stopListening(); listening = false } else beginListening() },
+                            onSend = { sendMessage() },
+                            onSpeakLast = { messages.lastOrNull { it.role == "assistant" }?.let { activity.speak(ChatEngine.spokenText(it.text), accent) } },
+                            onLogin = { page = Page.PROVIDER_LOGIN }
+                        )
+                    }
+                }
                 Page.HOME -> HomeScreen(level, completed.size, Curriculum.lessons.size,
                     { page = Page.CHAT }, { page = Page.LESSONS }, { page = Page.REVIEW }, { page = Page.PROGRESS })
-                Page.CHAT -> ChatScreen(
-                    providerId, provider.title, messages, draft, { draft = it }, partial, listening, sending,
-                    status, webLoaded,
-                    onMic = { if (listening) { activity.stopListening(); listening = false } else beginListening() },
-                    onSend = { sendMessage() },
-                    onSpeakLast = { messages.lastOrNull { it.role == "assistant" }?.let { activity.speak(ChatEngine.spokenText(it.text), accent) } },
-                    onLogin = { page = Page.PROVIDER_LOGIN }
-                )
                 Page.LESSONS -> LessonsScreen(
                     selectedLesson, completed, { selectedLesson = it },
                     onStart = { lesson ->
@@ -516,33 +516,39 @@ private fun ChatScreen(
 private fun ProviderLoginScreen(
     providerTitle: String,
     webLoaded: Boolean,
-    onDone: () -> Unit,
-    webContent: @Composable () -> Unit
+    onDone: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Вход в $providerTitle", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Отдельное окно авторизации", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Вход в $providerTitle", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Отдельное окно авторизации", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                }
+                TextButton(onClick = onDone) { Text("Готово") }
             }
-            TextButton(onClick = onDone) { Text("Готово") }
         }
-        Text(
-            "Войди в свой аккаунт на странице провайдера. После этого вернись в EnglishWorld: переписка, текстовый ввод и голос будут работать в окне приложения.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.secondary
-        )
-        webContent()
-        Text(
-            if (webLoaded) "Страница загружена. После входа нажми «Готово»."
-            else "Загружаю страницу…",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary
-        )
+        Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), shape = RoundedCornerShape(14.dp)) {
+            Text(
+                "Войди в аккаунт на странице провайдера. После этого нажми «Готово»: сайт скроется, а переписка продолжится в интерфейсе EnglishWorld.",
+                Modifier.fillMaxWidth().padding(12.dp),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), shape = RoundedCornerShape(14.dp)) {
+            Text(
+                if (webLoaded) "Страница загружена. После входа нажми «Готово»."
+                else "Загружаю страницу…",
+                Modifier.fillMaxWidth().padding(10.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
     }
 }
 
